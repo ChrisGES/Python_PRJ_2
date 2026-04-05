@@ -1,10 +1,7 @@
-from ftplib import FTP
-import hashlib
 import os
+import shutil
+from pathlib import Path
 from dotenv import load_dotenv
-
-
-
 
 def connexion_ftp(timeout=10):
     try:
@@ -19,18 +16,19 @@ def connexion_ftp(timeout=10):
         return None
 
 
+
 # ─────────────────────────────────────────────
 # 1. NAVIGATION
 # ─────────────────────────────────────────────
 
-def get_current_dir(ftp: FTP) -> str:
+def get_current_dir() -> str:
     """Retourne le répertoire de travail courant."""
-    return ftp.pwd()
+    return os.getcwd()
 
 
-def change_dir(ftp: FTP, path: str) -> str:
+def change_dir(path: str) -> str:
     """
-    Change le répertoire courant.
+    Change le répertoire de travail courant.
 
     Args:
         path : Chemin absolu ou relatif.
@@ -38,13 +36,13 @@ def change_dir(ftp: FTP, path: str) -> str:
     Returns:
         Nouveau répertoire courant.
     """
-    ftp.cwd(path)
-    current = ftp.pwd()
+    os.chdir(path)
+    current = os.getcwd()
     print(f"[OK] Répertoire courant : {current}")
     return current
 
 
-def list_dir(ftp: FTP, path: str = ".") -> list[str]:
+def list_dir(path: str = ".") -> list[str]:
     """
     Liste le contenu d'un répertoire.
 
@@ -54,272 +52,253 @@ def list_dir(ftp: FTP, path: str = ".") -> list[str]:
     Returns:
         Liste des noms de fichiers/dossiers.
     """
-    entries = []
-    ftp.retrlines(f"LIST {path}", entries.append)
+    entries = os.listdir(path)
     print(f"[OK] Contenu de '{path}' ({len(entries)} entrées) :")
-    for e in entries:
-        print(f"  {e}")
+    for name in sorted(entries):
+        full = os.path.join(path, name)
+        tag = "DIR " if os.path.isdir(full) else "FILE"
+        size = os.path.getsize(full) if os.path.isfile(full) else "-"
+        print(f"  [{tag}] {name}  ({size} octets)" if tag == "FILE" else f"  [{tag}] {name}/")
     return entries
 
 
-def list_dir_names(ftp: FTP, path: str = ".") -> list[str]:
+def list_dir_details(path: str = ".") -> list[dict]:
     """
-    Retourne uniquement les noms (sans métadonnées) d'un répertoire.
+    Liste le contenu d'un répertoire avec métadonnées complètes.
 
     Returns:
-        Liste de noms de fichiers/dossiers.
+        Liste de dicts avec : name, path, is_dir, size, modified.
     """
-    return ftp.nlst(path)
+    results = []
+    with os.scandir(path) as it:
+        for entry in sorted(it, key=lambda e: e.name):
+            stat = entry.stat()
+            results.append({
+                "name": entry.name,
+                "path": entry.path,
+                "is_dir": entry.is_dir(),
+                "size": stat.st_size,
+                "modified": stat.st_mtime,
+            })
+    return results
 
 
-def tree(ftp: FTP, path: str = ".", _prefix: str = "") -> None:
+def tree(path: str = ".", _prefix: str = "") -> None:
     """
     Affiche récursivement l'arborescence à partir de `path`.
 
     Args:
         path : Racine de l'arborescence.
     """
-    names = ftp.nlst(path)
-    for name in names:
-        basename = posixpath.basename(name)
-        print(f"{_prefix}├── {basename}")
-        try:
-            # Tenter d'entrer dans le sous-répertoire
-            ftp.cwd(name)
-            tree(ftp, name, _prefix + "│   ")
-            ftp.cwd("..")
-        except error_perm:
-            pass  # C'est un fichier, pas un dossier
+    if _prefix == "":
+        print(os.path.abspath(path))
+
+    entries = sorted(os.scandir(path), key=lambda e: (not e.is_dir(), e.name))
+    for i, entry in enumerate(entries):
+        connector = "└── " if i == len(entries) - 1 else "├── "
+        print(f"{_prefix}{connector}{entry.name}{'/' if entry.is_dir() else ''}")
+        if entry.is_dir():
+            extension = "    " if i == len(entries) - 1 else "│   "
+            tree(entry.path, _prefix + extension)
 
 
 # ─────────────────────────────────────────────
 # 2. CRÉER
 # ─────────────────────────────────────────────
 
-def make_dir(ftp: FTP, path: str) -> None:
+def make_dir(path: str) -> None:
     """
-    Crée un répertoire distant (y compris les parents manquants).
+    Crée un répertoire (y compris tous les parents manquants).
 
     Args:
         path : Chemin du répertoire à créer.
     """
-    parts = path.strip("/").split("/")
-    current = "/" if path.startswith("/") else ""
-    for part in parts:
-        current = posixpath.join(current, part)
-        try:
-            ftp.mkd(current)
-            print(f"[OK] Répertoire créé : {current}")
-        except error_perm as e:
-            if "550" not in str(e):  # 550 = déjà existant
-                raise
+    Path(path).mkdir(parents=True, exist_ok=True)
+    print(f"[OK] Répertoire créé : {path}")
 
 
-def upload_file(ftp: FTP, local_path: str, remote_path: str) -> None:
+def create_file(path: str, content: str | bytes = "") -> None:
     """
-    Envoie un fichier local vers le serveur FTP.
+    Crée un fichier avec un contenu donné.
+    Crée les répertoires parents si nécessaires.
 
     Args:
-        local_path  : Chemin du fichier local.
-        remote_path : Chemin de destination sur le serveur.
+        path    : Chemin du fichier à créer.
+        content : Contenu initial (str ou bytes, vide par défaut).
     """
-    with open(local_path, "rb") as f:
-        ftp.storbinary(f"STOR {remote_path}", f)
-    print(f"[OK] Fichier uploadé : {local_path} → {remote_path}")
-
-
-def create_file_from_content(ftp: FTP, remote_path: str, content: str | bytes) -> None:
-    """
-    Crée un fichier distant à partir d'un contenu en mémoire.
-
-    Args:
-        remote_path : Chemin du fichier distant à créer.
-        content     : Contenu du fichier (str ou bytes).
-    """
-    if isinstance(content, str):
-        content = content.encode("utf-8")
-    buf = io.BytesIO(content)
-    ftp.storbinary(f"STOR {remote_path}", buf)
-    print(f"[OK] Fichier créé : {remote_path}")
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    mode = "wb" if isinstance(content, bytes) else "w"
+    encoding = None if isinstance(content, bytes) else "utf-8"
+    with open(path, mode, encoding=encoding) as f:
+        f.write(content)
+    print(f"[OK] Fichier créé : {path}")
 
 
 # ─────────────────────────────────────────────
 # 3. MODIFIER
 # ─────────────────────────────────────────────
 
-def rename(ftp: FTP, old_path: str, new_path: str) -> None:
+def rename(src: str, dst: str) -> None:
     """
-    Renomme (ou déplace) un fichier ou répertoire.
+    Renomme un fichier ou répertoire.
 
     Args:
-        old_path : Chemin source.
-        new_path : Nouveau chemin.
+        src : Chemin source.
+        dst : Nouveau nom/chemin.
     """
-    ftp.rename(old_path, new_path)
-    print(f"[OK] Renommé : {old_path} → {new_path}")
+    Path(src).rename(dst)
+    print(f"[OK] Renommé : {src} → {dst}")
 
 
-def update_file(ftp: FTP, remote_path: str, new_content: str | bytes) -> None:
+def update_file(path: str, content: str | bytes) -> None:
     """
-    Remplace le contenu d'un fichier distant existant.
+    Remplace intégralement le contenu d'un fichier existant.
 
     Args:
-        remote_path : Chemin du fichier sur le serveur.
-        new_content : Nouveau contenu (str ou bytes).
+        path    : Chemin du fichier.
+        content : Nouveau contenu (str ou bytes).
     """
-    create_file_from_content(ftp, remote_path, new_content)
-    print(f"[OK] Fichier mis à jour : {remote_path}")
+    mode = "wb" if isinstance(content, bytes) else "w"
+    encoding = None if isinstance(content, bytes) else "utf-8"
+    with open(path, mode, encoding=encoding) as f:
+        f.write(content)
+    print(f"[OK] Fichier mis à jour : {path}")
 
 
-def append_to_file(ftp: FTP, remote_path: str, content: str | bytes) -> None:
+def append_to_file(path: str, content: str | bytes) -> None:
     """
-    Ajoute du contenu à la fin d'un fichier distant existant.
+    Ajoute du contenu à la fin d'un fichier existant.
 
     Args:
-        remote_path : Chemin du fichier distant.
-        content     : Contenu à ajouter.
+        path    : Chemin du fichier.
+        content : Contenu à ajouter (str ou bytes).
     """
-    if isinstance(content, str):
-        content = content.encode("utf-8")
-    buf = io.BytesIO(content)
-    ftp.storbinary(f"APPE {remote_path}", buf)
-    print(f"[OK] Contenu ajouté à : {remote_path}")
+    mode = "ab" if isinstance(content, bytes) else "a"
+    encoding = None if isinstance(content, bytes) else "utf-8"
+    with open(path, mode, encoding=encoding) as f:
+        f.write(content)
+    print(f"[OK] Contenu ajouté à : {path}")
+
+
+def read_file(path: str, binary: bool = False) -> str | bytes:
+    """
+    Lit et retourne le contenu d'un fichier.
+
+    Args:
+        path   : Chemin du fichier.
+        binary : Si True, lecture en mode binaire.
+
+    Returns:
+        Contenu du fichier (str ou bytes).
+    """
+    mode = "rb" if binary else "r"
+    encoding = None if binary else "utf-8"
+    with open(path, mode, encoding=encoding) as f:
+        return f.read()
 
 
 # ─────────────────────────────────────────────
 # 4. COPIER
 # ─────────────────────────────────────────────
 
-def _is_dir(ftp: FTP, path: str) -> bool:
-    """Détermine si `path` est un répertoire distant."""
-    original = ftp.pwd()
-    try:
-        ftp.cwd(path)
-        ftp.cwd(original)
-        return True
-    except error_perm:
-        return False
-
-
-def _download_to_memory(ftp: FTP, remote_path: str) -> bytes:
-    """Télécharge un fichier distant en mémoire."""
-    buf = io.BytesIO()
-    ftp.retrbinary(f"RETR {remote_path}", buf.write)
-    return buf.getvalue()
-
-
-def copy_file(ftp: FTP, src: str, dst: str) -> None:
+def copy_file(src: str, dst: str) -> None:
     """
-    Copie un fichier distant vers un autre emplacement distant.
+    Copie un fichier vers une destination.
+    Crée les répertoires parents de la destination si nécessaires.
 
     Args:
-        src : Chemin source.
-        dst : Chemin destination.
+        src : Fichier source.
+        dst : Fichier ou répertoire destination.
     """
-    data = _download_to_memory(ftp, src)
-    create_file_from_content(ftp, dst, data)
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)  # copy2 préserve les métadonnées
     print(f"[OK] Fichier copié : {src} → {dst}")
 
 
-def copy_dir(ftp: FTP, src: str, dst: str) -> None:
+def copy_dir(src: str, dst: str) -> None:
     """
-    Copie récursivement un répertoire distant vers une autre destination.
+    Copie récursivement un répertoire entier vers une destination.
+    La destination ne doit pas déjà exister.
 
     Args:
         src : Répertoire source.
-        dst : Répertoire destination (sera créé si nécessaire).
+        dst : Répertoire destination.
     """
-    make_dir(ftp, dst)
-    for name in ftp.nlst(src):
-        basename = posixpath.basename(name)
-        src_path = posixpath.join(src, basename)
-        dst_path = posixpath.join(dst, basename)
-        if _is_dir(ftp, src_path):
-            copy_dir(ftp, src_path, dst_path)
-        else:
-            copy_file(ftp, src_path, dst_path)
+    shutil.copytree(src, dst, dirs_exist_ok=True)
     print(f"[OK] Répertoire copié : {src} → {dst}")
+
+
+def copy(src: str, dst: str) -> None:
+    """
+    Copie un fichier ou un répertoire (détection automatique).
+
+    Args:
+        src : Source (fichier ou dossier).
+        dst : Destination.
+    """
+    if os.path.isdir(src):
+        copy_dir(src, dst)
+    else:
+        copy_file(src, dst)
 
 
 # ─────────────────────────────────────────────
 # 5. DÉPLACER
 # ─────────────────────────────────────────────
 
-def move_file(ftp: FTP, src: str, dst: str) -> None:
+def move(src: str, dst: str) -> None:
     """
-    Déplace un fichier distant (rename FTP).
+    Déplace un fichier ou un répertoire (fonctionne entre partitions).
+    Crée les répertoires parents de la destination si nécessaires.
 
     Args:
-        src : Chemin source.
-        dst : Chemin destination.
+        src : Source (fichier ou dossier).
+        dst : Destination.
     """
-    rename(ftp, src, dst)
-    print(f"[OK] Fichier déplacé : {src} → {dst}")
-
-
-def move_dir(ftp: FTP, src: str, dst: str) -> None:
-    """
-    Déplace un répertoire distant.
-    Utilise rename si possible, sinon effectue une copie + suppression.
-
-    Args:
-        src : Répertoire source.
-        dst : Répertoire destination.
-    """
-    try:
-        rename(ftp, src, dst)
-        print(f"[OK] Répertoire déplacé (rename) : {src} → {dst}")
-    except error_perm:
-        # Cross-device ou non supporté : copie puis suppression
-        copy_dir(ftp, src, dst)
-        delete_dir(ftp, src)
-        print(f"[OK] Répertoire déplacé (copy+delete) : {src} → {dst}")
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(src, dst)
+    print(f"[OK] Déplacé : {src} → {dst}")
 
 
 # ─────────────────────────────────────────────
 # 6. SUPPRIMER
 # ─────────────────────────────────────────────
 
-def delete_file(ftp: FTP, remote_path: str) -> None:
+def delete_file(path: str) -> None:
     """
-    Supprime un fichier distant.
+    Supprime un fichier.
 
     Args:
-        remote_path : Chemin du fichier à supprimer.
+        path : Chemin du fichier à supprimer.
     """
-    ftp.delete(remote_path)
-    print(f"[OK] Fichier supprimé : {remote_path}")
+    os.remove(path)
+    print(f"[OK] Fichier supprimé : {path}")
 
 
-def delete_dir(ftp: FTP, path: str) -> None:
+def delete_dir(path: str) -> None:
     """
     Supprime récursivement un répertoire et tout son contenu.
 
     Args:
         path : Répertoire à supprimer.
     """
-    for name in ftp.nlst(path):
-        basename = posixpath.basename(name)
-        entry = posixpath.join(path, basename)
-        if _is_dir(ftp, entry):
-            delete_dir(ftp, entry)
-        else:
-            delete_file(ftp, entry)
-    ftp.rmd(path)
+    shutil.rmtree(path)
     print(f"[OK] Répertoire supprimé : {path}")
 
 
-def delete(ftp: FTP, path: str) -> None:
+def delete(path: str) -> None:
     """
-    Supprime un fichier ou un répertoire (avec tout son contenu).
+    Supprime un fichier ou un répertoire (détection automatique).
 
     Args:
         path : Chemin du fichier ou répertoire à supprimer.
     """
-    if _is_dir(ftp, path):
-        delete_dir(ftp, path)
+    if os.path.isdir(path):
+        delete_dir(path)
     else:
-        delete_file(ftp, path)
+        delete_file(path)
+
+
 
 
 load_dotenv()
@@ -327,11 +306,40 @@ FTP_HOST = os.getenv("FTP_HOST")
 FTP_USER = os.getenv("FTP_USER")
 FTP_PASSWORD = os.getenv("FTP_PASSWORD")
 print("Lancement du programme")
-ftp=connexion_ftp()
-prompt=input("=>")
-match prompt:
-    case "pwd":
-        print(get_current_dir(ftp))
+while(1):
+    prompt=input("=>")
+    prompt=prompt.split()
+    match prompt[0]:
+        case "pwd":
+            print(get_current_dir())
+        case "cd":
+            if prompt.__len__()>1:
+                change_dir(prompt[1])
+        case "ls":
+            if prompt.__len__()>1:
+                list_dir(prompt[1])
+            else:
+                list_dir(".")
+        case "tree":
+            if prompt.__len__()>1:
+                tree(prompt[1])
+            else:
+                tree(".")
+        case "mkdir":
+            if prompt.__len__()>1:
+                make_dir(prompt[1])
+            else:
+                print("Il faut indiquer un nom")
+        case "mkfile":
+            if prompt.__len__()>1:
+                if prompt.__len__()>2:
+                    create_file(prompt[1],prompt[2])
+                else:
+                    create_file(prompt[1])
+            else:
+                print("Il faut indiquer un nom")
+
+
 
 
 

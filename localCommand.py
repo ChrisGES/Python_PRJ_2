@@ -1,10 +1,7 @@
 import os
 import shutil
+from os.path import isfile, isdir
 from pathlib import Path
-
-# ─────────────────────────────────────────────
-# 1. NAVIGATION
-# ─────────────────────────────────────────────
 
 def get_current_dir() -> str:
     """Retourne le répertoire de travail courant."""
@@ -57,7 +54,7 @@ def tree(path: str = ".", _prefix: str = "") -> None:
     if _prefix == "":
         print(os.path.abspath(path))
 
-    entries = sorted(os.scandir(path), key=lambda e: (not e.is_dir(), e.name))
+    entries = sorted(os.scandir(path))
     for i, entry in enumerate(entries):
         connector = "└── " if i == len(entries) - 1 else "├── "
         print(f"{_prefix}{connector}{entry.name}{'/' if entry.is_dir() else ''}")
@@ -65,10 +62,6 @@ def tree(path: str = ".", _prefix: str = "") -> None:
             extension = "    " if i == len(entries) - 1 else "│   "
             tree(entry.path, _prefix + extension)
 
-
-# ─────────────────────────────────────────────
-# 2. CRÉER
-# ─────────────────────────────────────────────
 
 def make_dir(path: str) -> None:
     """
@@ -91,16 +84,12 @@ def create_file(path: str, content: str | bytes = "") -> None:
         content : Contenu initial (str ou bytes, vide par défaut).
     """
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    mode = "wb" if isinstance(content, bytes) else "w"
-    encoding = None if isinstance(content, bytes) else "utf-8"
+    mode = "wb"
+    encoding = "utf-8"
     with open(path, mode, encoding=encoding) as f:
         f.write(content)
     print(f"[OK] Fichier créé : {path}")
 
-
-# ─────────────────────────────────────────────
-# 3. MODIFIER
-# ─────────────────────────────────────────────
 
 def rename(src: str, dst: str) -> None:
     """
@@ -137,8 +126,8 @@ def append_to_file(path: str, content: str | bytes) -> None:
         path    : Chemin du fichier.
         content : Contenu à ajouter (str ou bytes).
     """
-    mode = "ab" if isinstance(content, bytes) else "a"
-    encoding = None if isinstance(content, bytes) else "utf-8"
+    mode = "a"
+    encoding ="utf-8"
     with open(path, mode, encoding=encoding) as f:
         f.write(content)
     print(f"[OK] Contenu ajouté à : {path}")
@@ -155,15 +144,13 @@ def read_file(path: str, binary: bool = False) -> str | bytes:
     Returns:
         Contenu du fichier (str ou bytes).
     """
-    mode = "rb" if binary else "r"
-    encoding = None if binary else "utf-8"
-    with open(path, mode, encoding=encoding) as f:
-        return f.read()
-
-
-# ─────────────────────────────────────────────
-# 4. COPIER
-# ─────────────────────────────────────────────
+    if isfile(path):
+        mode = "r"
+        encoding ="utf-8"
+        with open(path, mode, encoding=encoding) as f:
+            return f.read()
+    else:
+        return "Le fichier n'existe pas"
 
 def copy_file(src: str, dst: str) -> None:
     """
@@ -174,9 +161,12 @@ def copy_file(src: str, dst: str) -> None:
         src : Fichier source.
         dst : Fichier ou répertoire destination.
     """
-    Path(dst).parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)  # copy2 préserve les métadonnées
-    print(f"[OK] Fichier copié : {src} → {dst}")
+    if isfile(src):
+        Path(dst).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)  # copy2 préserve les métadonnées
+        print(f"[OK] Fichier copié : {src} → {dst}")
+    else:
+        print("Le fichier source n'existe pas ")
 
 
 def copy_dir(src: str, dst: str) -> None:
@@ -188,8 +178,11 @@ def copy_dir(src: str, dst: str) -> None:
         src : Répertoire source.
         dst : Répertoire destination.
     """
-    shutil.copytree(src, dst, dirs_exist_ok=True)
-    print(f"[OK] Répertoire copié : {src} → {dst}")
+    if isdir(src):
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+        print(f"[OK] Répertoire copié : {src} → {dst}")
+    else:
+        print("Le dossier source n'existe pas")
 
 
 def copy(src: str, dst: str) -> None:
@@ -202,13 +195,10 @@ def copy(src: str, dst: str) -> None:
     """
     if os.path.isdir(src):
         copy_dir(src, dst)
-    else:
+    elif os.path.isfile(src):
         copy_file(src, dst)
-
-
-# ─────────────────────────────────────────────
-# 5. DÉPLACER
-# ─────────────────────────────────────────────
+    else:
+        print("Erreur dans le nom du fichier ou dossier source")
 
 def move(src: str, dst: str) -> None:
     """
@@ -222,11 +212,6 @@ def move(src: str, dst: str) -> None:
     Path(dst).parent.mkdir(parents=True, exist_ok=True)
     shutil.move(src, dst)
     print(f"[OK] Déplacé : {src} → {dst}")
-
-
-# ─────────────────────────────────────────────
-# 6. SUPPRIMER
-# ─────────────────────────────────────────────
 
 def delete_file(path: str) -> None:
     """

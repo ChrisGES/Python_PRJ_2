@@ -8,13 +8,9 @@ import time
 import logging
 import posixpath
 import threading
+from asyncio import wait
 from datetime import datetime
 from ftplib import FTP, error_perm
-
-
-# ─────────────────────────────────────────────
-# LOGGING
-# ─────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
@@ -80,11 +76,6 @@ def upload_dir(ftp: FTP, local_dir: str, remote_dir: str) -> tuple[int, int]:
 
     return uploaded, errors
 
-
-# ─────────────────────────────────────────────
-# SAUVEGARDE
-# ─────────────────────────────────────────────
-
 def backup_to_ftp(
         local_dir: str,
         ftp_host: str,
@@ -141,10 +132,10 @@ def scheduler_loop(
     log.info("Planificateur démarré — sauvegarde chaque vendredi à 20h00")
 
     while True:
-        aujourdhui = datetime.now()
-
-        if aujourdhui.weekday() == 4 :
-            if aujourdhui.hour==20:
+        date = datetime.now()
+        log.info(f"Datetime: {date.strftime('%d%m%Y - %HH%Mm%Ss')}")
+        if date.weekday() == 4 :
+            if date.hour==20:
                 backup_to_ftp(local_dir, ftp_host, ftp_user, ftp_password,
                               remote_base_dir, ftp_port)
                 time.sleep(3601)  # évite un double déclenchement dans la même minute
@@ -155,12 +146,13 @@ def scheduler_loop(
             time.sleep(3600*24)
 
 
+
 def start_friday_backup_thread(
         local_dir: str,
         ftp_host: str,
         ftp_user: str,
         ftp_password: str,
-        remote_base_dir: str = "/backups",
+        remote_base_dir: str = "/backup",
         ftp_port: int = 21,
 ) -> threading.Thread:
     """
@@ -179,7 +171,8 @@ def start_friday_backup_thread(
         Le thread daemon lancé.
     """
     thread = threading.Thread(
-        target=scheduler_loop(local_dir,ftp_host,ftp_user,ftp_password,remote_base_dir,ftp_port),
+        target=scheduler_loop,  # <- On passe la fonction, pas le résultat
+        args=(local_dir, ftp_host, ftp_user, ftp_password, remote_base_dir, ftp_port),
         daemon=True,
         name="FridayBackup",
     )

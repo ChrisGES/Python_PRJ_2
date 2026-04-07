@@ -12,6 +12,7 @@ from asyncio import wait
 from datetime import datetime
 from ftplib import FTP, error_perm
 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  [%(levelname)s]  %(message)s",
@@ -179,4 +180,5 @@ def start_friday_backup_thread(
     thread.start()
     log.info(f"Thread '{thread.name}' démarré (id={thread.ident})")
     return thread
+
 

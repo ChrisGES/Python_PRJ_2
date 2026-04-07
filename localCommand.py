@@ -84,7 +84,7 @@ def create_file(path: str, content: str | bytes = "") -> None:
         content : Contenu initial (str ou bytes, vide par défaut).
     """
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    mode = "wb"
+    mode = "w"
     encoding = "utf-8"
     with open(path, mode, encoding=encoding) as f:
         f.write(content)
@@ -99,8 +99,11 @@ def rename(src: str, dst: str) -> None:
         src : Chemin source.
         dst : Nouveau nom/chemin.
     """
-    Path(src).rename(dst)
-    print(f"[OK] Renommé : {src} → {dst}")
+    if isfile(src):
+        Path(src).rename(dst)
+        print(f"[OK] Renommé : {src} → {dst}")
+    else:
+        print(f"Le fichier {src} n'existe pas")
 
 
 def update_file(path: str, content: str | bytes) -> None:
@@ -111,11 +114,14 @@ def update_file(path: str, content: str | bytes) -> None:
         path    : Chemin du fichier.
         content : Nouveau contenu (str ou bytes).
     """
-    mode = "w"
-    encoding = "utf-8"
-    with open(path, mode, encoding=encoding) as f:
-        f.write(content)
-    print(f"[OK] Fichier mis à jour : {path}")
+    if isfile(path):
+        mode = "w"
+        encoding = "utf-8"
+        with open(path, mode, encoding=encoding) as f:
+            f.write(content)
+        print(f"[OK] Fichier mis à jour : {path}")
+    else:
+        print(f"Le fichier {path} n'existe pas")
 
 
 def append_to_file(path: str, content: str | bytes) -> None:
@@ -126,11 +132,14 @@ def append_to_file(path: str, content: str | bytes) -> None:
         path    : Chemin du fichier.
         content : Contenu à ajouter (str ou bytes).
     """
-    mode = "a"
-    encoding ="utf-8"
-    with open(path, mode, encoding=encoding) as f:
-        f.write(content)
-    print(f"[OK] Contenu ajouté à : {path}")
+    if isfile(path):
+        mode = "a"
+        encoding ="utf-8"
+        with open(path, mode, encoding=encoding) as f:
+            f.write(content)
+        print(f"[OK] Contenu ajouté à : {path}")
+    else:
+        print(f"Le fichier {path} n'existe pas")
 
 
 def read_file(path: str, binary: bool = False) -> str | bytes:
@@ -220,8 +229,11 @@ def delete_file(path: str) -> None:
     Args:
         path : Chemin du fichier à supprimer.
     """
-    os.remove(path)
-    print(f"[OK] Fichier supprimé : {path}")
+    if isfile(path):
+        os.remove(path)
+        print(f"[OK] Fichier supprimé : {path}")
+    else:
+        print("Le fichier n'existe pas")
 
 
 def delete_dir(path: str) -> None:
@@ -231,8 +243,12 @@ def delete_dir(path: str) -> None:
     Args:
         path : Répertoire à supprimer.
     """
-    shutil.rmtree(path)
-    print(f"[OK] Répertoire supprimé : {path}")
+    if isdir(path):
+        shutil.rmtree(path)
+        print(f"[OK] Répertoire supprimé : {path}")
+    else:
+        print("Le répertoire n'existe pas")
+
 
 
 def delete(path: str) -> None:
@@ -244,5 +260,7 @@ def delete(path: str) -> None:
     """
     if os.path.isdir(path):
         delete_dir(path)
-    else:
+    elif os.path.isfile(path):
         delete_file(path)
+    else:
+        print(f"Le fichier ou répértoire : {path} n'existe pas")

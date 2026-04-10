@@ -48,9 +48,10 @@ while(1):
                     list_dir(".")
             case "tree":
                 if prompt.__len__()>1:
-                    tree(prompt[1])
+                    list_files(prompt[1])
                 else:
-                    tree(".")
+                    list_files(".")
+
             case "mkdir":
                 if prompt.__len__()>1:
                     make_dir(prompt[1])
@@ -112,12 +113,11 @@ while(1):
             case "manualbackup":
                 backup_to_ftp(LOCAL_DIR,FTP_HOST,FTP_USER,FTP_PASSWORD,REMOTE_DIR,int(FTP_PORT))
 
-            case "restore":
-                ftp_to_local(LOCAL_DIR,FTP_HOST,FTP_USER,FTP_PASSWORD,REMOTE_DIR,int(FTP_PORT))
-
             case "quit"|"q":
                 print("Le programme va se fermer...")
                 break
+
+
 
 
 

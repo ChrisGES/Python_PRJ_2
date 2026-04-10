@@ -44,24 +44,14 @@ def list_dir(path: str = ".") -> list[str]:
     return entries
 
 
-def tree(path: str = ".", _prefix: str = "") -> None:
-    """
-    Affiche récursivement l'arborescence à partir de `path`.
-
-    Args:
-        path : Racine de l'arborescence.
-    """
-    if _prefix == "":
-        print(os.path.abspath(path))
-
-    entries = sorted(os.scandir(path))
-    for i, entry in enumerate(entries):
-        connector = "└── " if i == len(entries) - 1 else "├── "
-        print(f"{_prefix}{connector}{entry.name}{'/' if entry.is_dir() else ''}")
-        if entry.is_dir():
-            extension = "    " if i == len(entries) - 1 else "│   "
-            tree(entry.path, _prefix + extension)
-
+def list_files(path):
+    for root, dirs, files in os.walk(path):
+        level = root.replace(path, '').count(os.sep)
+        indent = ' ' * 4 * (level)
+        print('{}{}/'.format(indent, os.path.basename(root)))
+        subindent = ' ' * 4 * (level + 1)
+        for f in files:
+            print('{}{}'.format(subindent, f))
 
 def make_dir(path: str) -> None:
     """

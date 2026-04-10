@@ -8,7 +8,6 @@ import time
 import logging
 import posixpath
 import threading
-from asyncio import wait
 from datetime import datetime
 from ftplib import FTP, error_perm
 
